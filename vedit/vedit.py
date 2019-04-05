@@ -9,7 +9,7 @@ This module requires the ffmpeg binary from the FFmpeg project at
 https://ffmpeg.org/
 
 The ffmpeg command must have been compiled with support for the
-libx264 video codec and the libfdk_aac audio codec, for example with
+libx264 video codec and the aac audio codec, for example with
 this configure command:
 
 ./configure --enable-gpl --enable-libx264 --enable-nonfree --enable-libfdk-aac
@@ -33,6 +33,7 @@ import tempfile
 import uuid
 
 log = logging.getLogger(__name__)
+log.addHandler( logging.NullHandler() )
 
 ################################################################################
 ################################################################################
@@ -49,7 +50,7 @@ log = logging.getLogger(__name__)
 # https://ffmpeg.org/
 #
 # The ffmpeg command must have been compiled with support for the
-# libx264 video codec and the libfdk_aac audio codec, for example with
+# libx264 video codec and the aac audio codec, for example with
 # this configure command:
 # ./configure --enable-gpl --enable-libx264 --enable-nonfree --enable-libfdk-aac
 #
@@ -325,6 +326,7 @@ class Video( object ):
                     self.width = int( stream['width'] )
                     self.height = int( stream['height'] )
                     self.sample_aspect_ratio = stream.get( 'sample_aspect_ratio', '' )
+                    self.sample_aspect_ratio = '1:1'
                     if self.sample_aspect_ratio == '0:1':
                         log.warn( "Nonsense SAR value of 0:1 detected, assuming SAR is 1:1." )
                         self.sample_aspect_ratio = '1:1'
@@ -886,7 +888,7 @@ class Window( object ):
         background_file = self.get_next_renderfile()
         if self.bgimage_file is not None:
             # Lay down a background with silent audio if requested to.
-            cmd = '%s -y -loop 1 -i %s -f lavfi -i aevalsrc=0 -ac %d -c:a libfdk_aac -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -filter_complex " color=%s:size=%dx%d,setpts=PTS-STARTPTS/TB [base] ; [0] setpts=PTS-STARTPTS/TB [image]; [base] [image] overlay%s " -t %f %s' % ( FFMPEG, self.bgimage_file, audio_channels, self.pix_fmt, self.bgcolor, self.width, self.height, sar_clause, self.duration, background_file )
+            cmd = '%s -y -loop 1 -i %s -f lavfi -i aevalsrc=0 -ac %d -c:a aac -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -filter_complex " color=%s:size=%dx%d,setpts=PTS-STARTPTS/TB [base] ; [0] setpts=PTS-STARTPTS/TB [image]; [base] [image] overlay%s " -t %f %s' % ( FFMPEG, self.bgimage_file, audio_channels, self.pix_fmt, self.bgcolor, self.width, self.height, sar_clause, self.duration, background_file )
             log.info( "Running: %s" % ( cmd ) )
             ( status, output ) = subprocess.getstatusoutput( cmd )
             log.debug( "Output was: %s" % ( output ) )
@@ -894,7 +896,7 @@ class Window( object ):
                 raise Exception( "Error producing background image video file %s with command: %s\n\nOutput was: %s" % ( background_file, cmd, output ) )
         else:
             # There was no background image, lay down a solid color with silent audio.
-            cmd = '%s -y -f lavfi -i aevalsrc=0 -ac %d -c:a libfdk_aac -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264  -filter_complex " color=%s:size=%dx%d%s,setpts=PTS-STARTPTS/TB " -t %f %s' % ( FFMPEG, audio_channels, self.pix_fmt, self.bgcolor, self.width, self.height, sar_clause, self.duration, background_file )
+            cmd = '%s -y -f lavfi -i aevalsrc=0 -ac %d -c:a aac -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264  -filter_complex " color=%s:size=%dx%d%s,setpts=PTS-STARTPTS/TB " -t %f %s' % ( FFMPEG, audio_channels, self.pix_fmt, self.bgcolor, self.width, self.height, sar_clause, self.duration, background_file )
             log.info( "Running: %s" % ( cmd ) )
             ( status, output ) = subprocess.getstatusoutput( cmd )
             log.debug( "Output was: %s" % ( output ) )
@@ -913,7 +915,7 @@ class Window( object ):
             window_file = window.render( helper=True, audio_channels=audio_channels )
             tmpfile = self.get_next_renderfile()
             
-            cmd = '%s -y -i %s -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -ac %d -c:a libfdk_aac -filter_complex " [0:v] fifo [v0] ; [1:v] fifo [v1] ; [v0] [v1] overlay=x=%s:y=%s:eof_action=pass%s [outv] ; [0:a] afifo [a0] ; [1:a] afifo [a1] ; [a0] [a1] amix=inputs=2:duration=longest:dropout_transition=5 [outa] " -map "[outv]" -map "[outa]" -t %f %s' % ( FFMPEG, current, window_file, window.pix_fmt, audio_channels, window.x, window.y, sar_clause, self.duration, tmpfile )
+            cmd = '%s -y -i %s -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -ac %d -c:a aac -filter_complex " [0:v] fifo [v0] ; [1:v] fifo [v1] ; [v0] [v1] overlay=x=%s:y=%s:eof_action=pass%s [outv] ; [0:a] afifo [a0] ; [1:a] afifo [a1] ; [a0] [a1] amix=inputs=2:duration=longest:dropout_transition=5 [outa] " -map "[outv]" -map "[outa]" -t %f %s' % ( FFMPEG, current, window_file, window.pix_fmt, audio_channels, window.x, window.y, sar_clause, self.duration, tmpfile )
 
 
             log.info( "Running: %s" % ( cmd ) )
@@ -932,7 +934,7 @@ class Window( object ):
             if self.audio_file_channels != audio_channels:
                 # Convert the input audio file to the right number of channels.
                 audio_tmpfile = self.get_next_renderfile()
-                cmd = '%s -i %s -ac %d -c:a libfdk_aac -vn %s' % ( FFMPEG, self.audio_file, audio_channels, audio_tmpfile )
+                cmd = '%s -i %s -ac %d -c:a aac -vn %s' % ( FFMPEG, self.audio_file, audio_channels, audio_tmpfile )
                 log.info( "Running: %s" % ( cmd ) )
                 ( status, output ) = subprocess.getstatusoutput( cmd )
                 log.debug( "Output was: %s" % ( output ) )
@@ -948,7 +950,7 @@ class Window( object ):
             else:
                 audio_fade_start = max( 0, self.duration - 5 )
                 audio_fade_duration = self.duration - audio_fade_start
-            afade_clause = ' -c:a libfdk_aac -filter_complex " [1:a] afade=t=out:st=%f:d=%f [a1] ; [0:a] [a1] amix=inputs=2:duration=longest:dropout_transition=5 " ' % ( audio_fade_start, audio_fade_duration )
+            afade_clause = ' -c:a aac -filter_complex " [1:a] afade=t=out:st=%f:d=%f [a1] ; [0:a] [a1] amix=inputs=2:duration=longest:dropout_transition=5 " ' % ( audio_fade_start, audio_fade_duration )
 
             current = tmpfile
             tmpfile = self.get_next_renderfile()
@@ -972,7 +974,7 @@ class Window( object ):
         ###### Fix overall volume issues.
         current = tmpfile
         tmpfile = self.get_next_renderfile()
-        cmd = '%s -y -i %s -pix_fmt %s -c:a libfdk_aac -ac %d -vf copy -af " [0:a] dynaudnorm=g=3 " %s' % ( FFMPEG, current, self.pix_fmt, audio_channels, tmpfile )
+        cmd = '%s -y -i %s -pix_fmt %s -c:a aac -ac %d -vf copy -af " [0:a] dynaudnorm=g=3 " %s' % ( FFMPEG, current, self.pix_fmt, audio_channels, tmpfile )
         log.info( "Running: %s" % ( cmd ) )
         ( status, output ) = subprocess.getstatusoutput( cmd )
         log.debug( "Output was: %s" % ( output ) )
@@ -1157,7 +1159,7 @@ class Window( object ):
                     f.write( "file '%s'\n" % ( clip_file ))
                 f.close()
                     
-                cmd = "%s -y -f concat -safe 0 -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a libfdk_aac -ac %d %s" % ( FFMPEG, concat_file, self.pix_fmt, audio_channels, concat_vid )
+                cmd = "%s -y -f concat -safe 0 -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a aac -ac %d %s" % ( FFMPEG, concat_file, self.pix_fmt, audio_channels, concat_vid )
 
                 log.info( "Running: %s" % ( cmd ) )
                 ( status, output ) = subprocess.getstatusoutput( cmd )
@@ -1179,7 +1181,7 @@ class Window( object ):
 
             # Put the result on top of the background_file.
             tmpfile = self.get_next_renderfile()
-            cmd = '%s -y -i %s -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a libfdk_aac -ac %d -filter_complex " [0:v] fifo,setpts=PTS-STARTPTS/TB [a] ; [1:v] fifo,setpts=PTS-STARTPTS/TB [b] ; [a] [b] overlay=x=0:y=0:eof_action=pass ; %s " -t %f %s' % ( FFMPEG, background_file, concat_vid, self.pix_fmt, audio_channels, audio_clause, self.duration, tmpfile )
+            cmd = '%s -y -i %s -i %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a aac -ac %d -filter_complex " [0:v] fifo,setpts=PTS-STARTPTS/TB [a] ; [1:v] fifo,setpts=PTS-STARTPTS/TB [b] ; [a] [b] overlay=x=0:y=0:eof_action=pass ; %s " -t %f %s' % ( FFMPEG, background_file, concat_vid, self.pix_fmt, audio_channels, audio_clause, self.duration, tmpfile )
 
             log.info( "Running: %s" % ( cmd ) )
             ( status, output ) = subprocess.getstatusoutput( cmd )
@@ -1201,7 +1203,7 @@ class Window( object ):
             cmd = "%s -y -i %s " % ( FFMPEG, tmpfile )
             include_clause = ""
             scale_clause = ""
-            filter_complex = ' -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a libfdk_aac -ac %d -filter_complex " ' % ( self.pix_fmt, audio_channels )
+            filter_complex = ' -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a aac -ac %d -filter_complex " ' % ( self.pix_fmt, audio_channels )
             audio_clips = []
             for overlay_idx in range( overlay_group, min( len( overlays ), overlay_group + self.overlay_batch_concurrency ) ):
                 overlay_start = overlay_timing[overlay_idx][0]
@@ -1406,7 +1408,7 @@ class Window( object ):
             if len( filter_components ):
                 filter_clause = ' -filter_complex " %s " ' % ( " ; ".join( filter_components ) )
 
-            cmd = '%s -y -ss %f -i %s %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a libfdk_aac %s -t %f %s' % ( FFMPEG, clip.start, clip.video.filename, audio_clause, self.pix_fmt, filter_clause, clip.get_duration(), filename )
+            cmd = '%s -y -ss %f -i %s %s -pix_fmt %s -r 30000/1001 -crf 16 -c:v libx264 -c:a aac %s -t %f %s' % ( FFMPEG, clip.start, clip.video.filename, audio_clause, self.pix_fmt, filter_clause, clip.get_duration(), filename )
             
             log.info( "Running: %s" % ( cmd ) )
             ( status, output ) = subprocess.getstatusoutput( cmd )
@@ -1839,7 +1841,7 @@ def gen_background_video( duration,
     return w.render()
 
 if __name__ == '__main__':
-    ''' Example usage:
+    #Example usage:
     # Set some display properties.
     d = Display( display_style = PAN )
 
@@ -1847,57 +1849,59 @@ if __name__ == '__main__':
     Window.clear_cache()
 
     # Define some videos.
-    v1 = Video( 'test.mp4' )
-    v2 = Video( 'flip.mp4' )    
+    video1_path = r'C:\Users\bnables\Documents\LAS\ACM\movies\HotFire.avi'
+    v1 = Video(video1_path)
+    # v2 = Video( 'flip.mp4' )
 
     # Define some clips from our videos.
     c1 = Clip( v1, 1, 3 )  
-    c2 = Clip( v1, 7, 8 )
-    c3 = Clip( v2, 5, 6 )
-    cx = Clip( v1, 4, 9 )
-    c4 = Clip( v1, 4, 9, display=Display( display_style=OVERLAY, overlay_direction = UP ) )
-    c5 = Clip( v2, 0, 1, display=Display( display_style=OVERLAY, overlay_direction = DOWN ) )
-    c6 = Clip( v2, 1, 2, display=Display( display_style=OVERLAY, overlay_direction = LEFT ) )
-    c7 = Clip( v2, 2, 3, display=Display( display_style=OVERLAY, overlay_direction = RIGHT ) )
-    c8 = Clip( v2, 3, 5 )
+    # c2 = Clip( v1, 7, 8 )
+    # c3 = Clip( v2, 5, 6 )
+    # cx = Clip( v1, 4, 9 )
+    # c4 = Clip( v1, 4, 9, display=Display( display_style=OVERLAY, overlay_direction = UP ) )
+    # c5 = Clip( v2, 0, 1, display=Display( display_style=OVERLAY, overlay_direction = DOWN ) )
+    # c6 = Clip( v2, 1, 2, display=Display( display_style=OVERLAY, overlay_direction = LEFT ) )
+    # c7 = Clip( v2, 2, 3, display=Display( display_style=OVERLAY, overlay_direction = RIGHT ) )
+    # c8 = Clip( v2, 3, 5 )
+
 
     # Define some windows.
-    w0 = Window( width=1280, height=1024, audio_file='/wintmp/music/human405.m4a', duration=10 )
-    w1 = Window( display = d, height=1024, width=720 )
-    w2 = Window( width=200, height=200, x=520, y=520 )
-    w3 = Window( display=Display( display_style=OVERLAY, overlay_direction=RIGHT ), bgcolor='White', width=560, height=512, x=720 )
-    w4 = Window( display=Display( display_style=PAD, overlay_direction=RIGHT, pad_bgcolor='Green' ), bgcolor='Green', width=560, height=512, x=720, y=512 )
-
-    # We can apply some static image watermarks.
-    m1 = Watermark( 'logo.png',
-                    x = "main_w-overlay_w-10",
-                    y = "main_h-overlay_h-10",
-                    fade_out_start = 3,
-                    fade_out_duration = 1 )
-    m2 = Watermark( 'logo128.png',
-                    x = "trunc((main_w-overlay_w)/2)",
-                    y = "trunc((main_h-overlay_h)/2)",
-                    fade_in_start = -1,
-                    fade_in_duration = 1 )
-    w0.watermarks = [ m1, m2 ]
-
-    # Windows can hold clips and/or other windows.
-    w0.windows = [ w1, w3, w4 ]
-    # We can even have windows holding windows, e.g. w0->w1->w2.
-    w1.windows = [ w2 ]
-
-    # Manually assign clips to windows.
-    w2.clips = [ c3 ]
-    w1.clips = [ c1, c2 ]
-    w3.clips = [ c4, c5, c6, c7, c8 ]
-    w0.output_file = 'output1.mp4'
-    w0.render()
-
-    # Automatically distribute clips among windows..
-    distribute_clips( [ c1, c2, c3, c8, cx, c4, c5, c6, c7 ], [ w1, w2, w3, w4 ], w0.duration )
-    w0.output_file = 'output2.mp4'
-    w0.render()
-    '''
-    pass
-    
-        
+    # w0 = Window( width=1280, height=1024, audio_file='/wintmp/music/human405.m4a', duration=10 )
+    # w1 = Window( display = d, height=1024, width=720 )
+    # w2 = Window( width=200, height=200, x=520, y=520 )
+    # w3 = Window( display=Display( display_style=OVERLAY, overlay_direction=RIGHT ), bgcolor='White', width=560, height=512, x=720 )
+    # w4 = Window( display=Display( display_style=PAD, overlay_direction=RIGHT, pad_bgcolor='Green' ), bgcolor='Green', width=560, height=512, x=720, y=512 )
+    #
+    # # We can apply some static image watermarks.
+    # m1 = Watermark( 'logo.png',
+    #                 x = "main_w-overlay_w-10",
+    #                 y = "main_h-overlay_h-10",
+    #                 fade_out_start = 3,
+    #                 fade_out_duration = 1 )
+    # m2 = Watermark( 'logo128.png',
+    #                 x = "trunc((main_w-overlay_w)/2)",
+    #                 y = "trunc((main_h-overlay_h)/2)",
+    #                 fade_in_start = -1,
+    #                 fade_in_duration = 1 )
+    # w0.watermarks = [ m1, m2 ]
+    #
+    # # Windows can hold clips and/or other windows.
+    # w0.windows = [ w1, w3, w4 ]
+    # # We can even have windows holding windows, e.g. w0->w1->w2.
+    # w1.windows = [ w2 ]
+    #
+    # # Manually assign clips to windows.
+    # w2.clips = [ c3 ]
+    # w1.clips = [ c1, c2 ]
+    # w3.clips = [ c4, c5, c6, c7, c8 ]
+    # w0.output_file = 'output1.mp4'
+    # w0.render()
+    #
+    # # Automatically distribute clips among windows..
+    # distribute_clips( [ c1, c2, c3, c8, cx, c4, c5, c6, c7 ], [ w1, w2, w3, w4 ], w0.duration )
+    # w0.output_file = 'output2.mp4'
+    # w0.render()
+    # '''
+    # pass
+    #
+    #
